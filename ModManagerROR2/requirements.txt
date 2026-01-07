@@ -1,0 +1,2 @@
+pytest>=7.0.0
+exceptiongroup>=1.0.0;python_version<"3.11"
