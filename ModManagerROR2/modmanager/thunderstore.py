@@ -5,14 +5,15 @@ API Documentation: https://thunderstore.io/api/docs/
 """
 
 import json
-import os
-import tempfile
+import logging
 import urllib.request
 import urllib.error
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
+from .exceptions import ThunderstoreError, NetworkError, DownloadError
+
+logger = logging.getLogger(__name__)
 
 # Thunderstore API endpoints
 BASE_URL = "https://thunderstore.io"
@@ -49,25 +50,44 @@ def fetch_all_packages(timeout: int = 30) -> tuple[bool, list[dict] | str]:
         
     Returns:
         Tuple of (success, packages_list or error_message)
+        
+    Raises:
+        NetworkError: If connection fails
+        ThunderstoreError: If API returns invalid data
     """
     try:
         req = urllib.request.Request(
             API_V1_PACKAGES,
-            headers={"User-Agent": "RoR2ModManager/1.0"}
+            headers={"User-Agent": "RoR2ModManager/2.0"}
         )
+        
+        logger.info(f"Fetching packages from {API_V1_PACKAGES}")
         
         with urllib.request.urlopen(req, timeout=timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
+            logger.info(f"Fetched {len(data)} packages")
             return True, data
             
     except urllib.error.HTTPError as e:
-        return False, f"HTTP Error {e.code}: {e.reason}"
+        error_msg = f"HTTP Error {e.code}: {e.reason}"
+        logger.error(error_msg)
+        return False, error_msg
     except urllib.error.URLError as e:
-        return False, f"Connection failed: {e.reason}"
-    except json.JSONDecodeError:
-        return False, "Failed to parse API response"
+        error_msg = f"Connection failed: {e.reason}"
+        logger.error(error_msg)
+        return False, error_msg
+    except json.JSONDecodeError as e:
+        error_msg = f"Failed to parse API response: {e}"
+        logger.error(error_msg)
+        return False, error_msg
+    except TimeoutError:
+        error_msg = "Connection timed out"
+        logger.error(error_msg)
+        return False, error_msg
     except Exception as e:
-        return False, f"Error: {str(e)}"
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.error(error_msg)
+        return False, error_msg
 
 
 def parse_package(data: dict) -> ThunderstorePackage | None:
@@ -81,7 +101,6 @@ def parse_package(data: dict) -> ThunderstorePackage | None:
         ThunderstorePackage object or None if parsing fails
     """
     try:
-        # Get latest version info
         versions = data.get("versions", [])
         if not versions:
             return None
@@ -102,7 +121,8 @@ def parse_package(data: dict) -> ThunderstorePackage | None:
             date_updated=data.get("date_updated", ""),
             is_deprecated=data.get("is_deprecated", False)
         )
-    except (KeyError, TypeError, IndexError):
+    except (KeyError, TypeError, IndexError) as e:
+        logger.debug(f"Failed to parse package: {e}")
         return None
 
 
@@ -131,11 +151,9 @@ def search_packages(packages: list[dict], query: str, limit: int = 20) -> list[T
         name = pkg_data.get("name", "").lower()
         full_name = pkg_data.get("full_name", "").lower()
         
-        # Check latest version description
         versions = pkg_data.get("versions", [])
         description = versions[0].get("description", "").lower() if versions else ""
         
-        # Match against name, full_name, or description
         if query_lower in name or query_lower in full_name or query_lower in description:
             pkg = parse_package(pkg_data)
             if pkg and not pkg.is_deprecated:
@@ -162,9 +180,7 @@ def get_popular_packages(packages: list[dict], limit: int = 20) -> list[Thunders
         if pkg and not pkg.is_deprecated:
             parsed.append(pkg)
     
-    # Sort by downloads (descending)
     parsed.sort(key=lambda p: p.downloads, reverse=True)
-    
     return parsed[:limit]
 
 
@@ -186,61 +202,82 @@ def get_recently_updated(packages: list[dict], limit: int = 20) -> list[Thunders
         if pkg and not pkg.is_deprecated:
             parsed.append(pkg)
     
-    # Sort by date_updated (descending)
     parsed.sort(key=lambda p: p.date_updated, reverse=True)
-    
     return parsed[:limit]
 
 
-def download_package(package: ThunderstorePackage, dest_dir: str) -> tuple[bool, str]:
+def download_package(package: ThunderstorePackage, dest_dir: str, 
+                     progress_callback=None) -> tuple[bool, str]:
     """
     Download a package zip file from Thunderstore.
     
     Args:
         package: ThunderstorePackage to download
         dest_dir: Directory to save the zip file
+        progress_callback: Optional callback function(downloaded, total)
         
     Returns:
         Tuple of (success, file_path or error_message)
+        
+    Raises:
+        DownloadError: If download fails
     """
     if not package.download_url:
-        return False, "No download URL available"
+        raise DownloadError("No download URL available")
     
     try:
-        # Create destination directory if needed
         dest_path = Path(dest_dir)
         dest_path.mkdir(parents=True, exist_ok=True)
         
-        # Generate filename
         filename = f"{package.full_name}-{package.version}.zip"
         filepath = dest_path / filename
         
-        # Download the file
+        logger.info(f"Downloading {package.full_name} to {filepath}")
+        
         req = urllib.request.Request(
             package.download_url,
-            headers={"User-Agent": "RoR2ModManager/1.0"}
+            headers={"User-Agent": "RoR2ModManager/2.0"}
         )
         
         with urllib.request.urlopen(req, timeout=60) as response:
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            chunk_size = 8192
+            
             with open(filepath, "wb") as f:
-                # Read in chunks to handle large files
-                chunk_size = 8192
                 while True:
                     chunk = response.read(chunk_size)
                     if not chunk:
                         break
                     f.write(chunk)
+                    downloaded += len(chunk)
+                    
+                    if progress_callback and total_size:
+                        progress_callback(downloaded, total_size)
         
+        logger.info(f"Download complete: {filepath}")
         return True, str(filepath)
         
     except urllib.error.HTTPError as e:
-        return False, f"Download failed - HTTP {e.code}: {e.reason}"
+        error_msg = f"Download failed - HTTP {e.code}: {e.reason}"
+        logger.error(error_msg)
+        return False, error_msg
     except urllib.error.URLError as e:
-        return False, f"Download failed: {e.reason}"
+        error_msg = f"Download failed: {e.reason}"
+        logger.error(error_msg)
+        return False, error_msg
+    except PermissionError as e:
+        error_msg = f"Permission denied: {e}"
+        logger.error(error_msg)
+        return False, error_msg
     except IOError as e:
-        return False, f"Failed to save file: {e}"
+        error_msg = f"Failed to save file: {e}"
+        logger.error(error_msg)
+        return False, error_msg
     except Exception as e:
-        return False, f"Error: {str(e)}"
+        error_msg = f"Download error: {str(e)}"
+        logger.error(error_msg)
+        return False, error_msg
 
 
 def get_package_by_name(packages: list[dict], full_name: str) -> ThunderstorePackage | None:
@@ -287,7 +324,7 @@ def format_package_info(package: ThunderstorePackage) -> str:
     
     if package.dependencies:
         lines.append(f"Dependencies ({len(package.dependencies)}):")
-        for dep in package.dependencies[:10]:  # Limit displayed deps
+        for dep in package.dependencies[:10]:
             lines.append(f"  - {dep}")
         if len(package.dependencies) > 10:
             lines.append(f"  ... and {len(package.dependencies) - 10} more")
@@ -296,35 +333,3 @@ def format_package_info(package: ThunderstorePackage) -> str:
         lines.append("⚠ This package is DEPRECATED")
     
     return "\n".join(lines)
-
-
-def filter_by_category(packages: list[dict], category: str, limit: int = 50) -> list[ThunderstorePackage]:
-    """
-    Filter packages by category.
-    
-    Args:
-        packages: List of package data from API
-        category: Category to filter by
-        limit: Maximum results
-        
-    Returns:
-        List of matching packages
-    """
-    category_lower = category.lower()
-    results = []
-    
-    for pkg_data in packages:
-        if len(results) >= limit:
-            break
-            
-        categories = [c.lower() for c in pkg_data.get("categories", [])]
-        
-        if category_lower in categories:
-            pkg = parse_package(pkg_data)
-            if pkg and not pkg.is_deprecated:
-                results.append(pkg)
-    
-    # Sort by downloads
-    results.sort(key=lambda p: p.downloads, reverse=True)
-    
-    return results

@@ -2,7 +2,12 @@
 Dependency Checker - Functions for checking and validating mod dependencies.
 """
 
+import logging
 from dataclasses import dataclass
+
+from .exceptions import DependencyError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,9 +38,11 @@ def parse_dependency_string(dep_string: str) -> DependencyInfo | None:
     if not dep_string or not isinstance(dep_string, str):
         return None
     
+    dep_string = dep_string.strip()
     parts = dep_string.split("-")
     
     if len(parts) < 3:
+        logger.debug(f"Invalid dependency format: {dep_string}")
         return None
     
     author = parts[0]
@@ -74,6 +81,7 @@ def check_dependencies(mod: dict, installed_mods: list[dict]) -> dict:
             "details": []
         }
     
+    # Build lookup set
     installed_identifiers = set()
     for installed_mod in installed_mods:
         folder_name = installed_mod.get("folder_name", "")
@@ -92,44 +100,52 @@ def check_dependencies(mod: dict, installed_mods: list[dict]) -> dict:
     details = []
     
     for dep_string in dependencies:
-        dep_info = parse_dependency_string(dep_string)
-        
-        if not dep_info:
+        try:
+            dep_info = parse_dependency_string(dep_string)
+            
+            if not dep_info:
+                details.append({
+                    "dependency": dep_string,
+                    "status": "invalid",
+                    "message": "Could not parse dependency string"
+                })
+                continue
+            
+            is_found = False
+            dep_name_lower = dep_info.name.lower()
+            dep_full_lower = f"{dep_info.author}-{dep_info.name}".lower()
+            
+            if dep_name_lower in installed_identifiers or dep_full_lower in installed_identifiers:
+                is_found = True
+            
+            if is_found:
+                found.append(dep_string)
+                details.append({
+                    "dependency": dep_string,
+                    "status": "found",
+                    "parsed": {
+                        "author": dep_info.author,
+                        "name": dep_info.name,
+                        "version": dep_info.version
+                    }
+                })
+            else:
+                missing.append(dep_string)
+                details.append({
+                    "dependency": dep_string,
+                    "status": "missing",
+                    "parsed": {
+                        "author": dep_info.author,
+                        "name": dep_info.name,
+                        "version": dep_info.version
+                    }
+                })
+        except Exception as e:
+            logger.error(f"Error checking dependency {dep_string}: {e}")
             details.append({
                 "dependency": dep_string,
-                "status": "invalid",
-                "message": "Could not parse dependency string"
-            })
-            continue
-        
-        is_found = False
-        dep_name_lower = dep_info.name.lower()
-        dep_full_lower = f"{dep_info.author}-{dep_info.name}".lower()
-        
-        if dep_name_lower in installed_identifiers or dep_full_lower in installed_identifiers:
-            is_found = True
-        
-        if is_found:
-            found.append(dep_string)
-            details.append({
-                "dependency": dep_string,
-                "status": "found",
-                "parsed": {
-                    "author": dep_info.author,
-                    "name": dep_info.name,
-                    "version": dep_info.version
-                }
-            })
-        else:
-            missing.append(dep_string)
-            details.append({
-                "dependency": dep_string,
-                "status": "missing",
-                "parsed": {
-                    "author": dep_info.author,
-                    "name": dep_info.name,
-                    "version": dep_info.version
-                }
+                "status": "error",
+                "message": str(e)
             })
     
     return {
@@ -153,11 +169,14 @@ def find_missing_dependencies(mods: list[dict]) -> dict[str, list[str]]:
     missing_deps = {}
     
     for mod in mods:
-        result = check_dependencies(mod, mods)
-        
-        if not result["satisfied"]:
-            mod_name = mod.get("name", "Unknown")
-            missing_deps[mod_name] = result["missing"]
+        try:
+            result = check_dependencies(mod, mods)
+            
+            if not result["satisfied"]:
+                mod_name = mod.get("name", "Unknown")
+                missing_deps[mod_name] = result["missing"]
+        except Exception as e:
+            logger.error(f"Error checking dependencies for {mod.get('name', 'Unknown')}: {e}")
     
     return missing_deps
 

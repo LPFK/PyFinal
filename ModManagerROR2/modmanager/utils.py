@@ -108,7 +108,7 @@ def format_dependency_tree(tree: dict, indent: int = 0) -> str:
     return "\n".join(lines)
 
 
-def format_download_size(bytes_size: int) -> str:
+def format_file_size(bytes_size: int) -> str:
     """
     Format bytes into human-readable size.
     
@@ -123,3 +123,20 @@ def format_download_size(bytes_size: int) -> str:
             return f"{bytes_size:.1f} {unit}"
         bytes_size /= 1024
     return f"{bytes_size:.1f} TB"
+
+
+def truncate_string(text: str, max_length: int, suffix: str = "...") -> str:
+    """
+    Truncate a string to a maximum length.
+    
+    Args:
+        text: String to truncate
+        max_length: Maximum length
+        suffix: Suffix to add if truncated
+        
+    Returns:
+        Truncated string
+    """
+    if len(text) <= max_length:
+        return text
+    return text[:max_length - len(suffix)] + suffix

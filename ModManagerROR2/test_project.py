@@ -1,6 +1,6 @@
 """
-Tests for RoR2 Mod Manager | Les tests pour le gestionnaire de mods de Risk of Rain 2 AKA RoR2 Mod Manager
-Run with: pytest test_project.py -v | Pour lancer les tests: pytest test_project.py -v
+Tests for RoR2 Mod Manager
+Run with: pytest test_project.py -v
 """
 
 import json
@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-# Import all testable functions from project.py | Importer toutes les fonctions testables de project.py
+# Import all testable functions from project.py
 from project import (
     # Scanner
     parse_manifest,
@@ -40,7 +40,7 @@ from project import (
 
 
 # =============================================================================
-# Scanner Tests | Tests pour scanner.py
+# Scanner Tests
 # =============================================================================
 
 class TestParseManifest:
@@ -405,7 +405,7 @@ class TestUninstallMod:
 
 
 # =============================================================================
-# Dependency Tests | Tests pour dependencies.py
+# Dependency Tests
 # =============================================================================
 
 class TestParseDependencyString:
@@ -515,7 +515,7 @@ class TestFindMissingDependencies:
 
 
 # =============================================================================
-# Config Tests | Tests pour config.py
+# Config Tests
 # =============================================================================
 
 class TestParseConfigFile:
@@ -589,7 +589,7 @@ class TestSaveConfigFile:
 
 
 # =============================================================================
-# Thunderstore Tests | Tests pour thunderstore.py
+# Thunderstore Tests
 # =============================================================================
 
 class TestParsePackage:

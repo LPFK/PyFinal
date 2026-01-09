@@ -3,8 +3,12 @@ Settings - Application configuration and path management.
 """
 
 import json
+import logging
 from pathlib import Path
 
+from .exceptions import ConfigError
+
+logger = logging.getLogger(__name__)
 
 CONFIG_FILE = "manager_config.json"
 
@@ -22,15 +26,24 @@ def load_plugins_path() -> str:
         The saved plugins path, or empty string if not configured
     """
     config_path = get_config_path()
-    if config_path.exists():
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-                path = config.get("plugins_path", "")
-                if path and Path(path).exists():
-                    return path
-        except (json.JSONDecodeError, IOError):
-            pass
+    
+    if not config_path.exists():
+        logger.debug("Config file not found")
+        return ""
+    
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            path = config.get("plugins_path", "")
+            if path and Path(path).exists():
+                return path
+            elif path:
+                logger.warning(f"Saved plugins path no longer exists: {path}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in config file: {e}")
+    except IOError as e:
+        logger.error(f"Error reading config file: {e}")
+    
     return ""
 
 
@@ -45,17 +58,36 @@ def save_plugins_path(plugins_path: str) -> bool:
         True if saved successfully, False otherwise
     """
     config_path = get_config_path()
+    
     try:
+        # Load existing config or create new
+        config = {}
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        config["plugins_path"] = plugins_path
+        
         with open(config_path, "w", encoding="utf-8") as f:
-            json.dump({"plugins_path": plugins_path}, f, indent=2)
+            json.dump(config, f, indent=2)
+        
+        logger.info(f"Saved plugins path: {plugins_path}")
         return True
-    except IOError:
+        
+    except PermissionError as e:
+        logger.error(f"Permission denied saving config: {e}")
+        return False
+    except IOError as e:
+        logger.error(f"Error saving config: {e}")
         return False
 
 
 def setup_plugins_path() -> str:
     """
-    Prompt user to enter their BepInEx/plugins path.
+    Prompt user to enter their BepInEx/plugins path (CLI version).
     
     Returns:
         Valid plugins path or empty string if cancelled
@@ -65,12 +97,16 @@ def setup_plugins_path() -> str:
     print("(or 'cancel' to abort)")
     
     while True:
-        path = input("\nPath: ").strip()
+        try:
+            path = input("\nPath: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return ""
         
         if path.lower() == "cancel":
             return ""
         
-        if Path(path).exists() and Path(path).is_dir():
+        path_obj = Path(path)
+        if path_obj.exists() and path_obj.is_dir():
             save_plugins_path(path)
             return path
         else:
@@ -91,7 +127,7 @@ def get_config_dir(plugins_path: str) -> str:
     return str(Path(plugins_path).parent / "config")
 
 
-def get_downloads_dir() -> str:
+def get_downloads_dir() -> Path:
     """
     Get the downloads directory for mod zips.
     
@@ -99,5 +135,41 @@ def get_downloads_dir() -> str:
         Path to downloads directory
     """
     downloads = Path(__file__).parent.parent / "downloads"
-    downloads.mkdir(exist_ok=True)
-    return str(downloads)
+    try:
+        downloads.mkdir(exist_ok=True)
+    except PermissionError:
+        logger.error("Permission denied creating downloads directory")
+        # Fallback to temp directory
+        import tempfile
+        downloads = Path(tempfile.gettempdir()) / "ror2mm_downloads"
+        downloads.mkdir(exist_ok=True)
+    return downloads
+
+
+def validate_plugins_path(path: str) -> tuple[bool, str]:
+    """
+    Validate that a path is a valid BepInEx plugins directory.
+    
+    Args:
+        path: Path to validate
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not path:
+        return False, "Path is empty"
+    
+    path_obj = Path(path)
+    
+    if not path_obj.exists():
+        return False, "Path does not exist"
+    
+    if not path_obj.is_dir():
+        return False, "Path is not a directory"
+    
+    # Check if it looks like a BepInEx plugins folder
+    parent = path_obj.parent
+    if parent.name != "BepInEx":
+        logger.warning("Path may not be a BepInEx plugins folder")
+    
+    return True, ""

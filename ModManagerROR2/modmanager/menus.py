@@ -1,12 +1,13 @@
 """
-Menus - Command-line interface menu functions.
+Menus - Command-line interface menu functions with exception handling.
 """
 
+import logging
 from pathlib import Path
 
 from .scanner import scan_mods_directory
 from .manager import toggle_mod, install_mod_from_zip, uninstall_mod
-from .config import parse_config_file, save_config_file
+from .config import parse_config_file, save_config_file, get_config_files
 from .utils import filter_mods_by_name, format_mod_info, format_dependency_tree
 from .dependencies import check_dependencies, find_missing_dependencies, get_dependency_tree
 from .settings import get_config_dir, get_downloads_dir
@@ -19,15 +20,33 @@ from .thunderstore import (
     format_package_info,
     ThunderstorePackage
 )
+from .exceptions import (
+    ModManagerError,
+    ModNotFoundError,
+    ModAlreadyExistsError,
+    InstallationError,
+    InvalidZipError,
+    UninstallError,
+    ConfigError
+)
 
+logger = logging.getLogger(__name__)
 
-# Cache for API data to avoid repeated fetches
+# Cache for API data
 _packages_cache: list[dict] = []
 
 
 def list_all_mods(plugins_path: str) -> list[dict]:
     """Display a list of all installed mods."""
-    mods = scan_mods_directory(plugins_path)
+    try:
+        mods = scan_mods_directory(plugins_path)
+    except ModManagerError as e:
+        print(f"\n✗ Error scanning mods: {e}")
+        return []
+    except Exception as e:
+        print(f"\n✗ Unexpected error: {e}")
+        logger.exception("Error scanning mods")
+        return []
     
     if not mods:
         print("\nNo mods found in the plugins folder.")
@@ -48,13 +67,10 @@ def list_all_mods(plugins_path: str) -> list[dict]:
 
 def view_mod_details_menu(plugins_path: str) -> None:
     """Menu to view detailed information about a specific mod."""
-    mods = scan_mods_directory(plugins_path)
+    mods = list_all_mods(plugins_path)
     
     if not mods:
-        print("\nNo mods found.")
         return
-    
-    list_all_mods(plugins_path)
     
     try:
         choice = input("\nEnter mod number to view details (0 to cancel): ").strip()
@@ -74,13 +90,10 @@ def view_mod_details_menu(plugins_path: str) -> None:
 
 def toggle_mod_menu(plugins_path: str) -> None:
     """Menu to enable or disable a mod."""
-    mods = scan_mods_directory(plugins_path)
+    mods = list_all_mods(plugins_path)
     
     if not mods:
-        print("\nNo mods found.")
         return
-    
-    list_all_mods(plugins_path)
     
     try:
         choice = input("\nEnter mod number to toggle (0 to cancel): ").strip()
@@ -90,12 +103,17 @@ def toggle_mod_menu(plugins_path: str) -> None:
         index = int(choice) - 1
         if 0 <= index < len(mods):
             mod = mods[index]
-            success, new_state = toggle_mod(mod["path"])
-            if success:
-                state_str = "enabled" if new_state else "disabled"
-                print(f"\n✓ {mod['name']} has been {state_str}.")
-            else:
-                print(f"\n✗ Failed to toggle {mod['name']}.")
+            try:
+                success, new_state = toggle_mod(mod["path"])
+                if success:
+                    state_str = "enabled" if new_state else "disabled"
+                    print(f"\n✓ {mod['name']} has been {state_str}.")
+                else:
+                    print(f"\n✗ Failed to toggle {mod['name']}.")
+            except ModNotFoundError as e:
+                print(f"\n✗ Mod not found: {e}")
+            except ModManagerError as e:
+                print(f"\n✗ Error: {e}")
         else:
             print("Invalid mod number.")
     except ValueError:
@@ -104,7 +122,11 @@ def toggle_mod_menu(plugins_path: str) -> None:
 
 def search_mods_menu(plugins_path: str) -> None:
     """Menu to search for mods by name."""
-    mods = scan_mods_directory(plugins_path)
+    try:
+        mods = scan_mods_directory(plugins_path)
+    except ModManagerError as e:
+        print(f"\n✗ Error: {e}")
+        return
     
     if not mods:
         print("\nNo mods found.")
@@ -143,23 +165,31 @@ def install_mod_menu(plugins_path: str) -> None:
     if zip_path.lower() == "cancel":
         return
     
-    success, message = install_mod_from_zip(zip_path, plugins_path)
+    # Remove quotes if present
+    zip_path = zip_path.strip('"\'')
     
-    if success:
+    try:
+        success, message = install_mod_from_zip(zip_path, plugins_path)
         print(f"\n✓ {message}")
-    else:
-        print(f"\n✗ {message}")
+    except InvalidZipError as e:
+        print(f"\n✗ Invalid zip file: {e}")
+    except ModAlreadyExistsError as e:
+        print(f"\n✗ {e}")
+    except InstallationError as e:
+        print(f"\n✗ Installation failed: {e}")
+    except ModManagerError as e:
+        print(f"\n✗ Error: {e}")
+    except Exception as e:
+        print(f"\n✗ Unexpected error: {e}")
+        logger.exception("Installation error")
 
 
 def uninstall_mod_menu(plugins_path: str) -> None:
     """Menu to uninstall a mod."""
-    mods = scan_mods_directory(plugins_path)
+    mods = list_all_mods(plugins_path)
     
     if not mods:
-        print("\nNo mods found.")
         return
-    
-    list_all_mods(plugins_path)
     
     try:
         choice = input("\nEnter mod number to uninstall (0 to cancel): ").strip()
@@ -184,12 +214,15 @@ def uninstall_mod_menu(plugins_path: str) -> None:
                 config_choice = input("Also delete associated config files? (yes/no): ").strip().lower()
                 delete_config = config_choice == "yes"
             
-            success, message = uninstall_mod(mod["path"], delete_config, config_dir)
-            
-            if success:
+            try:
+                success, message = uninstall_mod(mod["path"], delete_config, config_dir)
                 print(f"\n✓ {message}")
-            else:
-                print(f"\n✗ {message}")
+            except ModNotFoundError as e:
+                print(f"\n✗ Mod not found: {e}")
+            except UninstallError as e:
+                print(f"\n✗ Uninstall failed: {e}")
+            except ModManagerError as e:
+                print(f"\n✗ Error: {e}")
         else:
             print("Invalid mod number.")
     except ValueError:
@@ -198,7 +231,11 @@ def uninstall_mod_menu(plugins_path: str) -> None:
 
 def check_dependencies_menu(plugins_path: str) -> None:
     """Menu to check dependencies for mods."""
-    mods = scan_mods_directory(plugins_path)
+    try:
+        mods = scan_mods_directory(plugins_path)
+    except ModManagerError as e:
+        print(f"\n✗ Error: {e}")
+        return
     
     if not mods:
         print("\nNo mods found.")
@@ -229,7 +266,11 @@ def check_all_dependencies(mods: list[dict]) -> None:
     """Check all mods for missing dependencies."""
     print("\nChecking all mods for missing dependencies...")
     
-    missing = find_missing_dependencies(mods)
+    try:
+        missing = find_missing_dependencies(mods)
+    except Exception as e:
+        print(f"\n✗ Error checking dependencies: {e}")
+        return
     
     if not missing:
         print("\n✓ All dependencies are satisfied!")
@@ -319,13 +360,13 @@ def view_dependency_tree_menu(mods: list[dict]) -> None:
 
 def edit_config_menu(plugins_path: str) -> None:
     """Menu to edit mod configuration files."""
-    config_dir = Path(get_config_dir(plugins_path))
+    config_dir = get_config_dir(plugins_path)
     
-    if not config_dir.exists():
-        print(f"\nConfig directory not found: {config_dir}")
+    try:
+        config_files = get_config_files(config_dir)
+    except Exception as e:
+        print(f"\n✗ Error accessing config directory: {e}")
         return
-    
-    config_files = sorted(config_dir.glob("*.cfg"))
     
     if not config_files:
         print("\nNo config files found.")
@@ -351,7 +392,11 @@ def edit_config_menu(plugins_path: str) -> None:
 
 def edit_config_file(config_path: str) -> None:
     """Interactive editor for a config file."""
-    settings = parse_config_file(config_path)
+    try:
+        settings = parse_config_file(config_path)
+    except ConfigError as e:
+        print(f"\n✗ Error reading config: {e}")
+        return
     
     if not settings:
         print("No editable settings found in this config file.")
@@ -371,10 +416,13 @@ def edit_config_file(config_path: str) -> None:
         try:
             choice = input("\nSetting #: ").strip()
             if choice == "0":
-                if save_config_file(config_path, settings):
-                    print("✓ Config saved successfully.")
-                else:
-                    print("✗ Failed to save config.")
+                try:
+                    if save_config_file(config_path, settings):
+                        print("✓ Config saved successfully.")
+                    else:
+                        print("✗ Failed to save config.")
+                except ConfigError as e:
+                    print(f"✗ Error saving config: {e}")
                 return
             
             index = int(choice) - 1
@@ -394,7 +442,7 @@ def edit_config_file(config_path: str) -> None:
 
 
 # =============================================================================
-# Thunderstore Browsing Menus
+# Thunderstore Menus
 # =============================================================================
 
 def thunderstore_menu(plugins_path: str) -> None:
@@ -405,18 +453,22 @@ def thunderstore_menu(plugins_path: str) -> None:
     print("  THUNDERSTORE - Browse & Download Mods")
     print("=" * 50)
     
-    # Fetch packages if cache is empty
     if not _packages_cache:
         print("\nFetching mod list from Thunderstore...")
-        success, result = fetch_all_packages()
-        
-        if not success:
-            print(f"\n✗ Failed to connect to Thunderstore: {result}")
-            print("Please check your internet connection and try again.")
+        try:
+            success, result = fetch_all_packages()
+            
+            if not success:
+                print(f"\n✗ Failed to connect to Thunderstore: {result}")
+                print("Please check your internet connection and try again.")
+                return
+            
+            _packages_cache = result
+            print(f"✓ Loaded {len(_packages_cache)} packages")
+        except Exception as e:
+            print(f"\n✗ Error: {e}")
+            logger.exception("Thunderstore fetch error")
             return
-        
-        _packages_cache = result
-        print(f"✓ Loaded {len(_packages_cache)} packages")
     
     while True:
         print("\n" + "-" * 40)
@@ -438,14 +490,17 @@ def thunderstore_menu(plugins_path: str) -> None:
         elif choice == "3":
             browse_recent_menu(plugins_path)
         elif choice == "4":
-            _packages_cache = []
+            _packages_cache.clear()
             print("\nRefreshing mod list...")
-            success, result = fetch_all_packages()
-            if success:
-                _packages_cache = result
-                print(f"✓ Loaded {len(_packages_cache)} packages")
-            else:
-                print(f"✗ Failed: {result}")
+            try:
+                success, result = fetch_all_packages()
+                if success:
+                    _packages_cache.extend(result)
+                    print(f"✓ Loaded {len(_packages_cache)} packages")
+                else:
+                    print(f"✗ Failed: {result}")
+            except Exception as e:
+                print(f"✗ Error: {e}")
         else:
             print("Invalid option.")
 
@@ -461,7 +516,12 @@ def search_thunderstore_menu(plugins_path: str) -> None:
         return
     
     print(f"\nSearching for '{query}'...")
-    results = search_packages(_packages_cache, query, limit=20)
+    
+    try:
+        results = search_packages(_packages_cache, query, limit=20)
+    except Exception as e:
+        print(f"✗ Search error: {e}")
+        return
     
     if not results:
         print("No mods found matching your search.")
@@ -475,7 +535,12 @@ def browse_popular_menu(plugins_path: str) -> None:
     global _packages_cache
     
     print("\nFetching popular mods...")
-    results = get_popular_packages(_packages_cache, limit=20)
+    
+    try:
+        results = get_popular_packages(_packages_cache, limit=20)
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        return
     
     if not results:
         print("No mods found.")
@@ -490,7 +555,12 @@ def browse_recent_menu(plugins_path: str) -> None:
     global _packages_cache
     
     print("\nFetching recently updated mods...")
-    results = get_recently_updated(_packages_cache, limit=20)
+    
+    try:
+        results = get_recently_updated(_packages_cache, limit=20)
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        return
     
     if not results:
         print("No mods found.")
@@ -554,51 +624,75 @@ def view_and_download_package(package: ThunderstorePackage, plugins_path: str) -
 
 def download_and_install_package(package: ThunderstorePackage, plugins_path: str) -> None:
     """Download a package and install it."""
-    downloads_dir = get_downloads_dir()
-    
-    print(f"\nDownloading {package.full_name}...")
-    success, result = download_package(package, downloads_dir)
-    
-    if not success:
-        print(f"✗ Download failed: {result}")
+    try:
+        downloads_dir = get_downloads_dir()
+    except Exception as e:
+        print(f"✗ Error creating downloads directory: {e}")
         return
     
-    print(f"✓ Downloaded to: {result}")
+    print(f"\nDownloading {package.full_name}...")
     
-    print("\nInstalling...")
-    success, message = install_mod_from_zip(result, plugins_path)
-    
-    if success:
+    try:
+        success, result = download_package(package, str(downloads_dir))
+        
+        if not success:
+            print(f"✗ Download failed: {result}")
+            return
+        
+        print(f"✓ Downloaded to: {result}")
+        
+        print("\nInstalling...")
+        success, message = install_mod_from_zip(result, plugins_path)
         print(f"✓ {message}")
         
-        # Check for missing dependencies
+        # Check dependencies
         print("\nChecking dependencies...")
-        mods = scan_mods_directory(plugins_path)
-        
-        # Find the newly installed mod
-        for mod in mods:
-            if package.name.lower() in mod.get("name", "").lower():
-                dep_result = check_dependencies(mod, mods)
-                if not dep_result["satisfied"]:
-                    print(f"\n⚠ Missing dependencies:")
-                    for dep in dep_result["missing"]:
-                        print(f"  - {dep}")
-                    print("\nYou may need to install these dependencies from Thunderstore.")
-                else:
-                    print("✓ All dependencies satisfied!")
-                break
-    else:
-        print(f"✗ {message}")
+        try:
+            mods = scan_mods_directory(plugins_path)
+            for mod in mods:
+                if package.name.lower() in mod.get("name", "").lower():
+                    dep_result = check_dependencies(mod, mods)
+                    if not dep_result["satisfied"]:
+                        print(f"\n⚠ Missing dependencies:")
+                        for dep in dep_result["missing"]:
+                            print(f"  - {dep}")
+                        print("\nYou may need to install these from Thunderstore.")
+                    else:
+                        print("✓ All dependencies satisfied!")
+                    break
+        except Exception as e:
+            logger.warning(f"Error checking dependencies: {e}")
+            
+    except InvalidZipError as e:
+        print(f"✗ Invalid mod file: {e}")
+    except ModAlreadyExistsError as e:
+        print(f"✗ {e}")
+    except InstallationError as e:
+        print(f"✗ Installation failed: {e}")
+    except ModManagerError as e:
+        print(f"✗ Error: {e}")
+    except Exception as e:
+        print(f"✗ Unexpected error: {e}")
+        logger.exception("Download/install error")
 
 
 def download_only_package(package: ThunderstorePackage) -> None:
     """Download a package without installing it."""
-    downloads_dir = get_downloads_dir()
+    try:
+        downloads_dir = get_downloads_dir()
+    except Exception as e:
+        print(f"✗ Error creating downloads directory: {e}")
+        return
     
     print(f"\nDownloading {package.full_name}...")
-    success, result = download_package(package, downloads_dir)
     
-    if success:
-        print(f"✓ Downloaded to: {result}")
-    else:
-        print(f"✗ Download failed: {result}")
+    try:
+        success, result = download_package(package, str(downloads_dir))
+        
+        if success:
+            print(f"✓ Downloaded to: {result}")
+        else:
+            print(f"✗ Download failed: {result}")
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        logger.exception("Download error")
