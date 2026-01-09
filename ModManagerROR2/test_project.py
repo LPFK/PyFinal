@@ -4,15 +4,24 @@ Run with: pytest test_project.py -v
 """
 
 import json
-import tempfile
 import os
 import shutil
+import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+
+import pytest
 
 # Import all testable functions from project.py
 from project import (
+    # Exceptions
+    ModManagerError,
+    ModNotFoundError,
+    ModAlreadyExistsError,
+    InstallationError,
+    InvalidZipError,
+    UninstallError,
+    ConfigError,
     # Scanner
     parse_manifest,
     scan_mods_directory,
@@ -125,6 +134,7 @@ class TestScanModsDirectory:
             result = scan_mods_directory(tmpdir)
             assert len(result) == 1
             assert result[0]["name"] == "TestMod"
+            assert result[0]["enabled"] is True
     
     def test_scan_mods_directory_disabled_mod(self):
         """Test that disabled mods are detected correctly."""
@@ -259,7 +269,7 @@ class TestGetModDependencies:
 
 
 # =============================================================================
-# Manager Tests
+# Manager Tests with Exception Handling
 # =============================================================================
 
 class TestToggleMod:
@@ -291,10 +301,10 @@ class TestToggleMod:
             assert (Path(tmpdir) / "TestMod").exists()
             assert not mod_folder.exists()
     
-    def test_toggle_mod_nonexistent(self):
-        """Test toggling a non-existent mod fails."""
-        success, new_state = toggle_mod("/nonexistent/path")
-        assert success is False
+    def test_toggle_mod_nonexistent_raises_exception(self):
+        """Test toggling a non-existent mod raises ModNotFoundError."""
+        with pytest.raises(ModNotFoundError):
+            toggle_mod("/nonexistent/path")
 
 
 class TestInstallModFromZip:
@@ -317,8 +327,8 @@ class TestInstallModFromZip:
             assert "TestMod" in message
             assert (plugins_dir / "TestMod").exists()
     
-    def test_install_mod_from_zip_no_manifest(self):
-        """Test installation fails when zip has no manifest."""
+    def test_install_mod_from_zip_no_manifest_raises_exception(self):
+        """Test installation raises InvalidZipError when zip has no manifest."""
         with tempfile.TemporaryDirectory() as tmpdir:
             plugins_dir = Path(tmpdir) / "plugins"
             plugins_dir.mkdir()
@@ -327,20 +337,17 @@ class TestInstallModFromZip:
             with zipfile.ZipFile(zip_path, "w") as zf:
                 zf.writestr("readme.txt", "No manifest here")
             
-            success, message = install_mod_from_zip(str(zip_path), str(plugins_dir))
-            
-            assert success is False
-            assert "manifest.json" in message.lower()
+            with pytest.raises(InvalidZipError):
+                install_mod_from_zip(str(zip_path), str(plugins_dir))
     
-    def test_install_mod_from_zip_file_not_found(self):
-        """Test installation fails when zip file doesn't exist."""
+    def test_install_mod_from_zip_file_not_found_raises_exception(self):
+        """Test installation raises InstallationError when zip doesn't exist."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            success, message = install_mod_from_zip("/nonexistent.zip", tmpdir)
-            assert success is False
-            assert "not found" in message.lower()
+            with pytest.raises(InstallationError):
+                install_mod_from_zip("/nonexistent.zip", tmpdir)
     
-    def test_install_mod_from_zip_already_exists(self):
-        """Test installation fails when mod folder already exists."""
+    def test_install_mod_from_zip_already_exists_raises_exception(self):
+        """Test installation raises ModAlreadyExistsError when mod exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
             plugins_dir = Path(tmpdir) / "plugins"
             plugins_dir.mkdir()
@@ -352,10 +359,20 @@ class TestInstallModFromZip:
             with zipfile.ZipFile(zip_path, "w") as zf:
                 zf.writestr("manifest.json", json.dumps({"name": "TestMod"}))
             
-            success, message = install_mod_from_zip(str(zip_path), str(plugins_dir))
+            with pytest.raises(ModAlreadyExistsError):
+                install_mod_from_zip(str(zip_path), str(plugins_dir))
+    
+    def test_install_mod_from_zip_not_a_zip_raises_exception(self):
+        """Test installation raises InvalidZipError for non-zip files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugins_dir = Path(tmpdir) / "plugins"
+            plugins_dir.mkdir()
             
-            assert success is False
-            assert "already exists" in message.lower()
+            fake_zip = Path(tmpdir) / "fake.zip"
+            fake_zip.write_text("not a zip file")
+            
+            with pytest.raises(InvalidZipError):
+                install_mod_from_zip(str(fake_zip), str(plugins_dir))
 
 
 class TestUninstallMod:
@@ -375,11 +392,10 @@ class TestUninstallMod:
             assert "TestMod" in message
             assert not mod_folder.exists()
     
-    def test_uninstall_mod_nonexistent(self):
-        """Test uninstalling non-existent mod fails."""
-        success, message = uninstall_mod("/nonexistent/path")
-        assert success is False
-        assert "not found" in message.lower()
+    def test_uninstall_mod_nonexistent_raises_exception(self):
+        """Test uninstalling non-existent mod raises ModNotFoundError."""
+        with pytest.raises(ModNotFoundError):
+            uninstall_mod("/nonexistent/path")
     
     def test_uninstall_mod_with_config(self):
         """Test uninstalling mod with config file deletion."""
@@ -430,17 +446,17 @@ class TestParseDependencyString:
         assert result.version == "1.0.0"
     
     def test_parse_dependency_string_invalid(self):
-        """Test parsing invalid dependency string."""
+        """Test parsing invalid dependency string returns None."""
         result = parse_dependency_string("invalid")
         assert result is None
     
     def test_parse_dependency_string_empty(self):
-        """Test parsing empty string."""
+        """Test parsing empty string returns None."""
         result = parse_dependency_string("")
         assert result is None
     
     def test_parse_dependency_string_none(self):
-        """Test parsing None."""
+        """Test parsing None returns None."""
         result = parse_dependency_string(None)
         assert result is None
 
@@ -582,10 +598,10 @@ class TestSaveConfigFile:
         finally:
             os.unlink(temp_path)
     
-    def test_save_config_file_nonexistent(self):
-        """Test saving to non-existent file fails gracefully."""
-        result = save_config_file("/nonexistent/path/config.cfg", {"key": "value"})
-        assert result is False
+    def test_save_config_file_nonexistent_raises_exception(self):
+        """Test saving to non-existent file raises ConfigError."""
+        with pytest.raises(ConfigError):
+            save_config_file("/nonexistent/path/config.cfg", {"key": "value"})
 
 
 # =============================================================================
@@ -770,5 +786,33 @@ class TestFormatPackageInfo:
         
         assert "Author-TestMod" in result
         assert "1.0.0" in result
-        assert "1,000" in result  # Formatted downloads
+        assert "1,000" in result
         assert "A test mod" in result
+
+
+# =============================================================================
+# Exception Hierarchy Tests
+# =============================================================================
+
+class TestExceptionHierarchy:
+    """Tests for custom exception hierarchy."""
+    
+    def test_mod_manager_error_is_base(self):
+        """Test ModManagerError is the base exception."""
+        assert issubclass(ModNotFoundError, ModManagerError)
+        assert issubclass(ModAlreadyExistsError, ModManagerError)
+        assert issubclass(InstallationError, ModManagerError)
+        assert issubclass(UninstallError, ModManagerError)
+        assert issubclass(ConfigError, ModManagerError)
+    
+    def test_invalid_zip_error_is_installation_error(self):
+        """Test InvalidZipError is subclass of InstallationError."""
+        assert issubclass(InvalidZipError, InstallationError)
+    
+    def test_exceptions_can_be_raised(self):
+        """Test exceptions can be raised and caught."""
+        with pytest.raises(ModManagerError):
+            raise ModNotFoundError("Test")
+        
+        with pytest.raises(InstallationError):
+            raise InvalidZipError("Test")

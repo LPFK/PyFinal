@@ -1,9 +1,3 @@
-"""
-RoR2 Mod Manager Package
-
-A Risk of Rain 2 Mod Visualizer and Manager with Thunderstore integration.
-"""
-
 from .exceptions import (
     ModManagerError,
     ManifestError,
@@ -80,6 +74,14 @@ __all__ = [
     "parse_package",
     "format_package_info",
     "ThunderstorePackage",
+    # GUI
+    "run_gui",
 ]
 
 __version__ = "3.0.0"
+
+# GUI (imported separately to avoid tkinter import on CLI)
+def run_gui():
+    """Launch the GUI application."""
+    from .gui import run_gui as _run_gui
+    _run_gui()

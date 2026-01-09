@@ -9,6 +9,30 @@ Features:
     - Browse and download mods from Thunderstore
     - Edit BepInEx config files
     - Comprehensive exception handling
+    - GUI and CLI interfaces
+
+Usage:
+    python project.py          # Launch GUI (default)
+    python project.py --cli    # Launch CLI mode
+    python project.py --help   # Show help
+
+Project Structure:
+    project.py              - Main entry point (this file)
+    test_project.py         - Tests
+    requirements.txt        - Dependencies
+    
+    modmanager/             - Main package
+        __init__.py         - Package exports
+        exceptions.py       - Custom exceptions
+        scanner.py          - Mod discovery and manifest parsing
+        manager.py          - Mod management (toggle, install, uninstall)
+        dependencies.py     - Dependency checking
+        config.py           - BepInEx config file editing
+        utils.py            - Display formatting and utilities
+        settings.py         - Application settings
+        menus.py            - CLI menu interfaces
+        thunderstore.py     - Thunderstore API integration
+        gui.py              - GUI interface (tkinter)
 """
 
 import logging
@@ -69,24 +93,24 @@ from modmanager import (
     format_package_info,
 )
 
-# Import menus
-from modmanager.menus import (
-    list_all_mods,
-    view_mod_details_menu,
-    toggle_mod_menu,
-    search_mods_menu,
-    install_mod_menu,
-    uninstall_mod_menu,
-    check_dependencies_menu,
-    edit_config_menu,
-    thunderstore_menu,
-)
 
-
-def main():
-    """Main entry point for the mod manager."""
+def run_cli():
+    """Run the CLI interface."""
+    # Import menus only when needed
+    from modmanager.menus import (
+        list_all_mods,
+        view_mod_details_menu,
+        toggle_mod_menu,
+        search_mods_menu,
+        install_mod_menu,
+        uninstall_mod_menu,
+        check_dependencies_menu,
+        edit_config_menu,
+        thunderstore_menu,
+    )
+    
     print("=" * 50)
-    print("  RoR2 Mod Manager v3.0")
+    print("  RoR2 Mod Manager v3.0 (CLI)")
     print("  Risk of Rain 2 Mod Visualizer & Manager")
     print("=" * 50)
     
@@ -183,6 +207,48 @@ def main():
             print(f"\n✗ An unexpected error occurred: {e}")
             logger.exception("Unexpected error in main menu")
             print("The error has been logged. Please try again.")
+
+
+def run_gui():
+    """Run the GUI interface."""
+    from modmanager import run_gui as _run_gui
+    _run_gui()
+
+
+def main():
+    """Main entry point - handles CLI arguments."""
+    # Check for command line arguments
+    if len(sys.argv) > 1:
+        arg = sys.argv[1].lower()
+        
+        if arg in ("--cli", "-c"):
+            run_cli()
+            return
+        elif arg in ("--help", "-h"):
+            print(__doc__)
+            print("\nOptions:")
+            print("  --cli, -c    Run in command-line interface mode")
+            print("  --help, -h   Show this help message")
+            print("\nDefault: Launch GUI")
+            return
+        else:
+            print(f"Unknown argument: {arg}")
+            print("Use --help for usage information.")
+            return
+    
+    # Default: run GUI
+    try:
+        run_gui()
+    except ImportError as e:
+        logger.error(f"GUI import error: {e}")
+        print("GUI could not be loaded. Falling back to CLI...")
+        print("(This may happen if tkinter is not installed)")
+        run_cli()
+    except Exception as e:
+        logger.exception("GUI error")
+        print(f"GUI error: {e}")
+        print("Falling back to CLI...")
+        run_cli()
 
 
 if __name__ == "__main__":

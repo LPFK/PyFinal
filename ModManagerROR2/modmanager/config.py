@@ -69,7 +69,6 @@ def parse_config_file(config_path: str) -> dict[str, str]:
     return settings
 
 
-def save_config_file(config_path: str, settings: dict[str, str]) -> bool:
     """
     Save modified settings back to a config file, preserving structure.
     
@@ -83,6 +82,7 @@ def save_config_file(config_path: str, settings: dict[str, str]) -> bool:
     Raises:
         ConfigError: If the config file cannot be written
     """
+def save_config_file(config_path: str, settings: dict[str, str]) -> bool:
     path = Path(config_path)
     
     if not path.exists():
@@ -121,7 +121,6 @@ def save_config_file(config_path: str, settings: dict[str, str]) -> bool:
         return False
 
 
-def get_config_files(config_dir: str) -> list[Path]:
     """
     Get all config files in a directory.
     
@@ -131,6 +130,7 @@ def get_config_files(config_dir: str) -> list[Path]:
     Returns:
         List of Path objects for .cfg files
     """
+def get_config_files(config_dir: str) -> list[Path]:
     path = Path(config_dir)
     
     if not path.exists():
