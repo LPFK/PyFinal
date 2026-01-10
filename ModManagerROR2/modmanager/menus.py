@@ -1,5 +1,5 @@
 """
-Menus - Command-line interface menu functions with exception handling.
+Menus - Command-line interface menu functions. 
 """
 
 import logging
@@ -10,7 +10,14 @@ from .manager import toggle_mod, install_mod_from_zip, uninstall_mod
 from .config import parse_config_file, save_config_file, get_config_files
 from .utils import filter_mods_by_name, format_mod_info, format_dependency_tree
 from .dependencies import check_dependencies, find_missing_dependencies, get_dependency_tree
-from .settings import get_config_dir, get_downloads_dir
+from .settings import (
+    get_config_dir, 
+    get_downloads_dir,
+    load_game_path,
+    setup_game_path,
+    launch_modded,
+    launch_vanilla
+)
 from .thunderstore import (
     fetch_all_packages,
     search_packages,
@@ -696,3 +703,92 @@ def download_only_package(package: ThunderstorePackage) -> None:
     except Exception as e:
         print(f"✗ Error: {e}")
         logger.exception("Download error")
+
+
+# =============================================================================
+# Game Launch Menus
+# =============================================================================
+
+def launch_game_menu(plugins_path: str) -> None:
+    """Menu for launching the game."""
+    print("\n" + "=" * 40)
+    print("  LAUNCH GAME")
+    print("=" * 40)
+    print("\n[1] 🎮 Start Modded (with mods)")
+    print("[2] 🎮 Start Vanilla (no mods)")
+    print("[3] ⚙️  Configure game path")
+    print("[0] Back")
+    
+    game_path = load_game_path()
+    if game_path:
+        print(f"\nGame path: {game_path}")
+    else:
+        print("\n⚠ Game path not configured")
+    
+    choice = input("\nChoose an option: ").strip()
+    
+    if choice == "0":
+        return
+    elif choice == "1":
+        start_modded_menu(plugins_path)
+    elif choice == "2":
+        start_vanilla_menu(plugins_path)
+    elif choice == "3":
+        configure_game_path_menu(plugins_path)
+    else:
+        print("Invalid option.")
+
+
+def start_modded_menu(plugins_path: str) -> None:
+    """Launch the game with mods."""
+    game_path = load_game_path()
+    
+    if not game_path:
+        print("\n⚠ Game path not configured.")
+        game_path = setup_game_path(plugins_path)
+        if not game_path:
+            print("Cannot launch without game path.")
+            return
+    
+    print("\n🚀 Starting Risk of Rain 2 (Modded)...")
+    success, message = launch_modded(game_path)
+    
+    if success:
+        print(f"✓ {message}")
+    else:
+        print(f"✗ {message}")
+
+
+def start_vanilla_menu(plugins_path: str) -> None:
+    """Launch the game without mods."""
+    game_path = load_game_path()
+    
+    if not game_path:
+        print("\n⚠ Game path not configured.")
+        game_path = setup_game_path(plugins_path)
+        if not game_path:
+            print("Cannot launch without game path.")
+            return
+    
+    print("\n🚀 Starting Risk of Rain 2 (Vanilla - No Mods)...")
+    success, message = launch_vanilla(game_path)
+    
+    if success:
+        print(f"✓ {message}")
+    else:
+        print(f"✗ {message}")
+
+
+def configure_game_path_menu(plugins_path: str) -> None:
+    """Configure the game installation path."""
+    current_path = load_game_path()
+    
+    if current_path:
+        print(f"\nCurrent game path: {current_path}")
+    
+    new_path = setup_game_path(plugins_path)
+    
+    if new_path:
+        print(f"\n✓ Game path set to: {new_path}")
+    else:
+        print("\nGame path not changed.")

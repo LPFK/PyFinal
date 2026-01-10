@@ -1,36 +1,48 @@
-# RoR2 Mod Manager v2.0
+# RoR2 Mod Manager v3.0
 
 A Risk of Rain 2 Mod Visualizer and Manager with **Thunderstore integration** ( Like Mo2 but for Risk of Rain 2 and with more features !! | Comme Mo2 mais pour Risk of Rain 2 et avec plus de fonctionnalités !!).
 
 ## Features
 
-### 📦 Installed Mods | Mod installés
+### Installed Mods | Mod installés
 - **List all mods** - View installed mods with status |  Liste de tous les mods installés avec leur statut 
 - **View mod details** - Full info including dependencies |  Voir les détails d'un mod 
 - **Enable/Disable mods** - Toggle mods without deleting |  Activer/Désactiver des mods sans les supprimer 
 - **Search mods** - Find mods by name |  Rechercher des mods par nom 
 
-### 🔧 Mod Management | Gestion des mods
+### Mod Management | Gestion des mods
 - **Install from zip** - Add mods from downloaded zip files |  Installer des mods depuis des fichiers zip 
 - **Uninstall mods** - Remove mods with optional config cleanup |  Supprimer des mods avec nettoyage optionnel des fichiers de configuration 
 - **Dependency checker** - Find missing dependencies |  Trouver les dépendances manquantes 
 
-### 🌐 Thunderstore Integration | Intégration de Thunderstore
+### Thunderstore Integration | Intégration de Thunderstore
 - **Search mods** - Search the Thunderstore database |  Rechercher des mods dans la base de données de Thunderstore, Via leurs API 
 - **Browse popular** - View most downloaded mods |  Voir les mods les plus téléchargés 
 - **Recently updated** - See latest mod updates |  Voir les dernières mises à jour des mods 
 - **Download & install** - One-click mod installation |  Télécharger et installer des mods en un clic 
 
-### ⚙️ Settings | Paramètres
+### Settings | Paramètres
 - **Edit configs** - Modify BepInEx config files |  Modifier les fichiers de configuration de BepInEx(ModLoader) 
 - **Path management** - Configure your mods folder |  Configurer le dossier des mods 
+
+### Dual Interface | Interface double
+- **GUI Mode** (default) - Modern tkinter interface
+- **CLI Mode** - Classic command-line interface
+
+### Exception Handling | Gestion des exceptions
+- Custom exception hierarchy
+- Logging to `mod_manager.log`
+- Graceful error recovery
+###  Start Modded or vanilla | Lancer le jeu en modded ou vanilla
+- Start Modded: Launch the game with mods enabled | Lancer le jeu avec les mods activés
+- Start Vanilla: Launch the game without mods | Lancer le jeu sans les mods
 
 ## Project Structure | Structure du projet
 
 ```
 ror2_mod_manager/
 ├── project.py              # Main entry point | Point d'entrée principal
-├── test_project.py         # 51 pytest tests | 51 tests pytest
+├── test_project.py         # 55 pytest tests | 55 tests pytest
 ├── requirements.txt        # Dependencies | Dépendances
 ├── README.md               # This file | Ce fichier
 │
@@ -39,6 +51,8 @@ ror2_mod_manager/
     ├── scanner.py          # Mod discovery | Fetch des mods du Thunderstore
     ├── manager.py          # Install/uninstall/toggle | Installation/desinstallation/activation/desactivation
     ├── dependencies.py     # Dependency checking | Vérification des dépendances
+    ├── gui.py              # GUI | Interface graphique
+    ├── exception.py        # Exception handling | Gestion des exceptions
     ├── config.py           # Config file editing | Edition des fichiers de configuration
     ├── utils.py            # Formatting utilities | Utilitaires de formatage
     ├── settings.py         # App configuration | Configuration de l'application
@@ -52,13 +66,15 @@ ror2_mod_manager/
 '(Recommanded create a virtual environment before running the program | Je recommande de créer un environnement virtuel avant de lancer le programme)'
 1. - python -m venv RoR2MM (Windows) | python3 -m venv RoR2MM (Linux/Mac)
 2. - RoR2MM\Scripts\activate (Windows) | source RoR2MM/bin/activate (Linux/Mac)
-3. - pip install -r requirements.txt
+3. - pip install -r requirements.txt / python -m pip install -r requirements.txt
 ```
 
 ## Usage | Utilisation
 
 ```bash
-python project.py
+python project.py ( GUI ( By default ) )
+python project.py --cli ( CLI )
+python project.py --help ( Help )
 ```
 
 On first run, you'll be asked for your `BepInEx/plugins` folder path. | Sur le premier lancement, il vous sera demandé pour le chemin du dossier `BepInEx/plugins`.
@@ -183,4 +199,4 @@ pytest test_project.py -v
 
 ## License | Licence ( Encore une fois le meme mot que en anglais ehehe )
 
-MIT License - Made for educational purposes. | MIT License - Made for educational purposes.
+MIT License - Made for educational purposes.

@@ -10,29 +10,12 @@ Features:
     - Edit BepInEx config files
     - Comprehensive exception handling
     - GUI and CLI interfaces
+    - Start Modded or vanilla
 
 Usage:
     python project.py          # Launch GUI (default)
     python project.py --cli    # Launch CLI mode
     python project.py --help   # Show help
-
-Project Structure:
-    project.py              - Main entry point (this file)
-    test_project.py         - Tests
-    requirements.txt        - Dependencies
-    
-    modmanager/             - Main package
-        __init__.py         - Package exports
-        exceptions.py       - Custom exceptions
-        scanner.py          - Mod discovery and manifest parsing
-        manager.py          - Mod management (toggle, install, uninstall)
-        dependencies.py     - Dependency checking
-        config.py           - BepInEx config file editing
-        utils.py            - Display formatting and utilities
-        settings.py         - Application settings
-        menus.py            - CLI menu interfaces
-        thunderstore.py     - Thunderstore API integration
-        gui.py              - GUI interface (tkinter)
 """
 
 import logging
@@ -107,6 +90,7 @@ def run_cli():
         check_dependencies_menu,
         edit_config_menu,
         thunderstore_menu,
+        launch_game_menu,
     )
     
     print("=" * 50)
@@ -144,7 +128,11 @@ def run_cli():
             print("\n" + "=" * 50)
             print("  MAIN MENU")
             print("=" * 50)
-            print("\n📦 Installed Mods")
+            print("\n🎮 Launch Game")
+            print("  [M] Start Vanilla")
+            print("  [V] Start Modded")
+            print()
+            print("📦 Installed Mods")
             print("  [1] List all mods")
             print("  [2] View mod details")
             print("  [3] Enable/Disable mod")
@@ -161,6 +149,7 @@ def run_cli():
             print("⚙️  Settings")
             print("  [9] Edit mod config")
             print("  [C] Change mods folder")
+            print("  [G] Configure game path")
             print()
             print("  [0] Exit")
             print("=" * 50)
@@ -170,6 +159,12 @@ def run_cli():
             if choice == "0":
                 print("\nGoodbye! Happy modding!")
                 break
+            elif choice == "M":
+                from modmanager.menus import start_modded_menu
+                start_vanilla_menu(plugins_path)
+            elif choice == "V":
+                from modmanager.menus import start_vanilla_menu
+                start_Modded_menu(plugins_path)
             elif choice == "1":
                 list_all_mods(plugins_path)
             elif choice == "2":
@@ -198,6 +193,9 @@ def run_cli():
                     print("\nCancelled.")
                 except Exception as e:
                     print(f"\nError: {e}")
+            elif choice == "G":
+                from modmanager.menus import configure_game_path_menu
+                configure_game_path_menu(plugins_path)
             else:
                 print("Invalid option. Please try again.")
                 
@@ -211,6 +209,27 @@ def run_cli():
 
 def run_gui():
     """Run the GUI interface."""
+    # Test tkinter availability first
+    try:
+        import tkinter as tk
+        # Test if we can create a window
+        test_root = tk.Tk()
+        test_root.destroy()
+    except ImportError as e:
+        print(f"✗ tkinter is not available: {e}")
+        print("\nTo fix this on Windows:")
+        print("  1. Reinstall Python and check 'tcl/tk and IDLE' option")
+        print("  2. Or run: python project.py --cli")
+        print("\nFalling back to CLI mode...\n")
+        run_cli()
+        return
+    except Exception as e:
+        print(f"✗ tkinter error: {e}")
+        print("Falling back to CLI mode...\n")
+        run_cli()
+        return
+    
+    # Now run the GUI
     from modmanager import run_gui as _run_gui
     _run_gui()
 
@@ -224,31 +243,23 @@ def main():
         if arg in ("--cli", "-c"):
             run_cli()
             return
+        elif arg in ("--gui", "-g"):
+            run_gui()
+            return
         elif arg in ("--help", "-h"):
             print(__doc__)
             print("\nOptions:")
-            print("  --cli, -c    Run in command-line interface mode")
+            print("  --gui, -g    Run graphical interface (default)")
+            print("  --cli, -c    Run command-line interface")
             print("  --help, -h   Show this help message")
-            print("\nDefault: Launch GUI")
             return
         else:
             print(f"Unknown argument: {arg}")
             print("Use --help for usage information.")
             return
     
-    # Default: run GUI
-    try:
-        run_gui()
-    except ImportError as e:
-        logger.error(f"GUI import error: {e}")
-        print("GUI could not be loaded. Falling back to CLI...")
-        print("(This may happen if tkinter is not installed)")
-        run_cli()
-    except Exception as e:
-        logger.exception("GUI error")
-        print(f"GUI error: {e}")
-        print("Falling back to CLI...")
-        run_cli()
+    # Default: try GUI, fall back to CLI
+    run_gui()
 
 
 if __name__ == "__main__":

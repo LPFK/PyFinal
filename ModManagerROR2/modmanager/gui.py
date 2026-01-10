@@ -11,7 +11,20 @@ from pathlib import Path
 from .scanner import scan_mods_directory
 from .manager import toggle_mod, install_mod_from_zip, uninstall_mod
 from .dependencies import check_dependencies, find_missing_dependencies
-from .settings import load_plugins_path, save_plugins_path, get_config_dir, get_downloads_dir
+from .settings import (
+    load_plugins_path, 
+    save_plugins_path, 
+    get_config_dir, 
+    get_downloads_dir,
+    load_game_path,
+    save_game_path,
+    setup_game_path,
+    get_game_path_from_plugins,
+    find_game_path,
+    launch_modded,
+    launch_vanilla,
+    ROR2_EXECUTABLE
+)
 from .thunderstore import (
     fetch_all_packages,
     search_packages,
@@ -43,6 +56,7 @@ class ModManagerApp:
         
         # State
         self.plugins_path = ""
+        self.game_path = ""
         self.mods: list[dict] = []
         self.packages_cache: list[dict] = []
         self.thunderstore_results: list[ThunderstorePackage] = []
@@ -83,19 +97,32 @@ class ModManagerApp:
         self._create_status_bar()
     
     def _create_top_bar(self):
-        """Create top bar with path selection."""
+        """Create top bar with path selection and launch buttons."""
         top_frame = ttk.Frame(self.main_frame)
         top_frame.pack(fill=tk.X, pady=(0, 5))
         
-        ttk.Label(top_frame, text="Plugins Folder:", style="Header.TLabel").pack(side=tk.LEFT)
+        # Left side - path config
+        path_frame = ttk.Frame(top_frame)
+        path_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Label(path_frame, text="Plugins Folder:", style="Header.TLabel").pack(side=tk.LEFT)
         
         self.path_var = tk.StringVar(value="Not configured")
-        self.path_label = ttk.Label(top_frame, textvariable=self.path_var, 
-                                     style="Status.TLabel", width=60)
+        self.path_label = ttk.Label(path_frame, textvariable=self.path_var, 
+                                     style="Status.TLabel", width=50)
         self.path_label.pack(side=tk.LEFT, padx=(10, 10))
         
-        ttk.Button(top_frame, text="Browse...", command=self._browse_path).pack(side=tk.LEFT)
-        ttk.Button(top_frame, text="Refresh", command=self._refresh_mods).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(path_frame, text="Browse...", command=self._browse_path).pack(side=tk.LEFT)
+        ttk.Button(path_frame, text="Refresh", command=self._refresh_mods).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Right side - launch buttons
+        launch_frame = ttk.Frame(top_frame)
+        launch_frame.pack(side=tk.RIGHT)
+        
+        ttk.Button(launch_frame, text="🎮 Start Vanilla", 
+                   command=self._launch_modded).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(launch_frame, text="🎮 Start Modded", 
+                   command=self._launch_vanilla).pack(side=tk.LEFT)
     
     def _create_mods_tab(self):
         """Create the installed mods tab."""
@@ -270,11 +297,29 @@ class ModManagerApp:
             if self.plugins_path:
                 self.path_var.set(self.plugins_path)
                 self._refresh_mods()
+                # Try to auto-detect game path
+                self._load_game_path()
             else:
                 self._browse_path()
         except Exception as e:
             logger.error(f"Error loading config: {e}")
             self._browse_path()
+    
+    def _load_game_path(self):
+        """Load or auto-detect game path."""
+        self.game_path = load_game_path()
+        
+        if not self.game_path and self.plugins_path:
+            # Try to derive from plugins path
+            self.game_path = get_game_path_from_plugins(self.plugins_path)
+            if self.game_path:
+                save_game_path(self.game_path)
+        
+        if not self.game_path:
+            # Try auto-detection
+            self.game_path = find_game_path()
+            if self.game_path:
+                save_game_path(self.game_path)
     
     def _browse_path(self):
         """Open folder browser for plugins path."""
@@ -291,9 +336,85 @@ class ModManagerApp:
             except Exception as e:
                 logger.error(f"Error saving path: {e}")
             self._refresh_mods()
+            self._load_game_path()
     
     # =========================================================================
-    # Installed Mods | Mods Installer
+    # Game Launch
+    # =========================================================================
+    
+    def _launch_modded(self):
+        """Launch the game with mods enabled."""
+        if not self._ensure_game_path():
+            return
+        
+        self.status_var.set("Launching modded...")
+        self.root.update()
+        
+        success, message = launch_modded(self.game_path)
+        
+        if success:
+            self.status_var.set(message)
+            messagebox.showinfo("Launching", message)
+        else:
+            self.status_var.set("Launch failed")
+            messagebox.showerror("Launch Failed", message)
+    
+    def _launch_vanilla(self):
+        """Launch the game without mods."""
+        if not self._ensure_game_path():
+            return
+        
+        self.status_var.set("Launching vanilla...")
+        self.root.update()
+        
+        success, message = launch_vanilla(self.game_path)
+        
+        if success:
+            self.status_var.set(message)
+            messagebox.showinfo("Launching", message)
+        else:
+            self.status_var.set("Launch failed")
+            messagebox.showerror("Launch Failed", message)
+    
+    def _ensure_game_path(self) -> bool:
+        """Ensure game path is configured, prompt if not."""
+        if self.game_path:
+            return True
+        
+        # Try auto-detection first
+        self._load_game_path()
+        if self.game_path:
+            return True
+        
+        # Ask user to browse
+        messagebox.showinfo(
+            "Game Path Required",
+            "Please select your Risk of Rain 2 installation folder.\n\n"
+            f"Look for the folder containing '{ROR2_EXECUTABLE}'."
+        )
+        
+        path = filedialog.askdirectory(
+            title="Select Risk of Rain 2 folder",
+            initialdir=Path.home()
+        )
+        
+        if path:
+            exe_path = Path(path) / ROR2_EXECUTABLE
+            if exe_path.exists():
+                self.game_path = path
+                save_game_path(path)
+                return True
+            else:
+                messagebox.showerror(
+                    "Invalid Path",
+                    f"Could not find '{ROR2_EXECUTABLE}' in that folder.\n"
+                    "Please select the correct Risk of Rain 2 folder."
+                )
+        
+        return False
+    
+    # =========================================================================
+    # Installed Mods
     # =========================================================================
     
     def _refresh_mods(self):
@@ -485,7 +606,7 @@ Path: {mod.get('path', '?')}"""
             self.status_var.set("Ready")
     
     # =========================================================================
-    # Thunderstore Tab 
+    # Thunderstore
     # =========================================================================
     
     def _ensure_packages_cache(self) -> bool:
@@ -663,7 +784,7 @@ Dependencies ({len(pkg.dependencies)}):
         thread.start()
     
     # =========================================================================
-    # Dependencies Tab
+    # Dependencies
     # =========================================================================
     
     def _check_all_dependencies(self):
